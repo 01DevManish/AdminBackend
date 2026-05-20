@@ -432,6 +432,37 @@ export class AdminController {
         );
       }
 
+      // Save images to product_images table
+      const imageUrls: string[] = [];
+      if (typeof item.image_url === 'string' && item.image_url.trim()) {
+        imageUrls.push(item.image_url.trim());
+      }
+      if (Array.isArray(item.image_urls)) {
+        for (const url of item.image_urls) {
+          if (typeof url === 'string' && url.trim() && !imageUrls.includes(url.trim())) {
+            imageUrls.push(url.trim());
+          }
+        }
+      }
+      if (imageUrls.length === 0 && item.sku) {
+        const imageMap = await this.dynamo.getImageMapBySkus([item.sku]);
+        const skuKey = String(item.sku).trim().toUpperCase();
+        if (imageMap[skuKey]) {
+          imageUrls.push(imageMap[skuKey]);
+        }
+      }
+
+      if (imageUrls.length > 0) {
+        await this.db.query('delete from product_images where product_id = $1', [productId]);
+        for (let i = 0; i < imageUrls.length; i++) {
+          await this.db.query(
+            `insert into product_images (product_id, variant_id, image_url, alt_text, sort_order)
+             values ($1, $2, $3, $4, $5)`,
+            [productId, variantId || null, imageUrls[i], `${item.title || 'Product'} image ${i + 1}`, i],
+          );
+        }
+      }
+
       return res.json({ ok: true, productId });
     } catch (e) {
       console.error('Import Error:', e);
